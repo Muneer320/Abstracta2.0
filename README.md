@@ -20,10 +20,10 @@ git clone https://github.com/Muneer320/Abstracta2.0
 cd Abstracta2.0
 ```
 
-2. Install required dependencies:
+2. Install the dependencies (Python 3.9+):
 
 ```bash
-pip install numpy Pillow
+pip install -r requirements.txt
 ```
 
 ## Usage
@@ -44,8 +44,12 @@ python main.py -i <input_image> [options]
 - `-n, --number`: Number of shapes to generate (default: 1200)
 - `-r, --resolution`: Output resolution (default: 512)
 - `-w, --working-res`: Working resolution (default: 256)
-- `-k, --keep-progress`: Save progress images (default: True)
-- `--no-progress`: Disable saving progress images
+- `-k, --keep-progress` / `--no-keep-progress`: Save a progress image every 20 shapes (default: on)
+- `--no-progress`: Same as `--no-keep-progress`
+- `--seed`: Random seed, so the same input and seed produce the same image
+- `--no-show`: Don't open the result in an image viewer when finished
+
+Output goes to `output/`: the final image is `output/final_circles.png` or `output/final_triangles.png`, plus the progress snapshots if enabled.
 
 ### Example:
 
@@ -117,18 +121,17 @@ Main class responsible for:
 
 ## Performance
 
-The generator includes several performance optimizations:
-
-- NumPy-based calculations for faster processing
-- Efficient random number generation
-- Optimized image manipulation using PIL
-- Progress tracking with time estimates
+Each shape runs 20 random starts with 50 mutation steps each, and every candidate redraws the canvas. Time therefore grows with both the shape count and the working resolution. The default 256px working resolution with 1200 shapes takes a while, so use a smaller `-w` or `-n` for quick experiments.
 
 ## Acknowledgments
 
-This project is an extension of [Abstracta](https://github.com/datavorous/abstracta/) by [datavorous](https://github.com/datavorous/), with additional features including:
+This project is an extension of Abstracta by [datavorous](https://github.com/datavorous/). The original repository (`datavorous/abstracta`) is no longer available. Additional features in this version:
 
 - Multiple shape support
 - Command-line interface
 - Progress tracking
-- Performance optimizations
+- Reproducible runs with `--seed`
+
+## License
+
+MIT, see [LICENSE](LICENSE). Credit for the original idea goes to datavorous.

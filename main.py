@@ -6,7 +6,7 @@ import time
 
 
 class ShapeImageGenerator:
-    def __init__(self, target_image, shape='circle', count=300, base_resolution=256, output_directory="output", keep_progress=True):
+    def __init__(self, target_image, shape='circle', count=300, base_resolution=256, output_directory="output", keep_progress=True, seed=None):
         self.shape_type = shape.lower()
         if self.shape_type not in ['circle', 'triangle']:
             raise ValueError(
@@ -29,8 +29,8 @@ class ShapeImageGenerator:
         self.max_shapes = count
         self.generated_shapes = []
 
-        # Use numpy's random number generator for better performance
-        self.rng = np.random.default_rng()
+        # Use numpy's random number generator for better performance (seedable for reproducible runs)
+        self.rng = np.random.default_rng(seed)
 
     def root_mean_square_error(self, image1, image2):
         diff = image1.astype(np.float32) - image2.astype(np.float32)
@@ -40,7 +40,8 @@ class ShapeImageGenerator:
         if self.shape_type == 'circle':
             center_x = self.rng.integers(0, self.width)
             center_y = self.rng.integers(0, self.height)
-            radius = self.rng.integers(1, self.width // 4)
+            # Upper bound must stay above 1 or integers() fails at tiny working resolutions
+            radius = self.rng.integers(1, max(2, self.width // 4))
             colors = self.rng.integers(0, 256, 3)
             return (center_x, center_y, radius, *colors)
         else:  # triangle
@@ -77,7 +78,7 @@ class ShapeImageGenerator:
                 center_y = max(
                     0, min(self.height-1, center_y + self.rng.integers(-20, 21)))
             elif mutation_type == 2:
-                radius = max(1, min(self.width//2, radius +
+                radius = max(1, min(max(1, self.width // 2), radius +
                              self.rng.integers(-10, 11)))
             else:
                 color_idx = self.rng.integers(0, 3)
@@ -161,15 +162,13 @@ class ShapeImageGenerator:
             remaining_shapes = self.max_shapes - (iteration + 1)
             estimated_remaining_time = remaining_shapes / shapes_per_second
 
-            print(f"Added shape {iteration +
-                  1}/{self.max_shapes}, Score: {score:.2f}")
-            print(f"Elapsed: {elapsed_time:.1f}s, Estimated remaining: {
-                  estimated_remaining_time:.1f}s")
+            print(f"Added shape {iteration + 1}/{self.max_shapes}, Score: {score:.2f}")
+            print(f"Elapsed: {elapsed_time:.1f}s, Estimated remaining: {estimated_remaining_time:.1f}s")
 
             # Save intermediate result
             if self.keep_progress and (iteration + 1) % 20 == 0:
                 Image.fromarray(self.current_image).save(
-                    f"{self.output_directory}/progress_{iteration+1}.png")
+                    os.path.join(self.output_directory, f"progress_{iteration + 1}.png"))
 
         pil_image = Image.fromarray(self.current_image)
         resized_image = pil_image.resize(
@@ -181,59 +180,67 @@ class ShapeImageGenerator:
         return resized_image
 
 
+def positive_int(value):
+    number = int(value)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be a positive integer, got {value}")
+    return number
+
+
 def main():
-    # Parse command line arguments
     parser = argparse.ArgumentParser(
         description='Generate abstract image using geometric shapes')
 
-    # Required arguments
     parser.add_argument('-i', '--image', required=True,
                         help='Path to input image')
-
-    # Optional arguments with shorter aliases
     parser.add_argument('-s', '--shape', choices=['circle', 'triangle'], default='circle',
                         help='Geometric shape to use (default: circle)')
-    parser.add_argument('-n', '--number', type=int, default=1200,
+    parser.add_argument('-n', '--number', type=positive_int, default=1200,
                         help='Number of shapes to generate (default: 1200)')
-    parser.add_argument('-r', '--resolution', type=int, default=512,
+    parser.add_argument('-r', '--resolution', type=positive_int, default=512,
                         help='Output resolution (default: 512)')
-    parser.add_argument('-w', '--working-res', type=int, default=256,
+    parser.add_argument('-w', '--working-res', type=positive_int, default=256,
                         help='Working resolution (default: 256)')
-    parser.add_argument('-k', '--keep-progress', action='store_true', default=True,
-                        help='Save progress images every 20 iterations (default: True)')
+    parser.add_argument('-k', '--keep-progress', action=argparse.BooleanOptionalAction, default=True,
+                        help='Save progress images every 20 shapes into output/ (default: on; --no-keep-progress to disable)')
     parser.add_argument('--no-progress', action='store_false', dest='keep_progress',
-                        help='Disable saving progress images')
+                        help='Same as --no-keep-progress')
+    parser.add_argument('--seed', type=int, default=None,
+                        help='Random seed for a reproducible result')
+    parser.add_argument('--no-show', action='store_true',
+                        help="Don't open the final image in a viewer when done")
 
     args = parser.parse_args()
 
-    # Load target image
-    target_image = Image.open(args.image)
+    try:
+        target_image = Image.open(args.image)
+        target_image.load()
+    except FileNotFoundError:
+        parser.error(f"input image not found: {args.image}")
+    except (OSError, Image.UnidentifiedImageError):
+        parser.error(f"not a readable image file: {args.image}")
 
-    # Output Directory
     directory = "output"
-    if args.keep_progress and not os.path.exists(directory):
-        os.makedirs(directory)
+    os.makedirs(directory, exist_ok=True)
 
-    # Create generator
     generator = ShapeImageGenerator(
         target_image,
         shape=args.shape,
         count=args.number,
         base_resolution=args.working_res,
         output_directory=directory,
-        keep_progress=args.keep_progress
+        keep_progress=args.keep_progress,
+        seed=args.seed,
     )
 
-    # Generate abstract image
     abstract_image = generator.generate_abstract_image(
         target_resolution=args.resolution)
 
-    # Save results
-    output_filename = f"output/final_{
-        args.shape}s.png" if args.keep_progress else f"final_{args.shape}s.png"
+    output_filename = os.path.join(directory, f"final_{args.shape}s.png")
     abstract_image.save(output_filename)
     print(f"\nSaved final image to: {output_filename}")
-    abstract_image.show()
+    if not args.no_show:
+        abstract_image.show()
 
 
 if __name__ == "__main__":
